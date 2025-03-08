@@ -24,6 +24,8 @@
 
 namespace Chamber {
 
+
+
 // HGA Constants
 #define HGA_WIDTH 720
 #define HGA_HEIGHT 348
@@ -35,6 +37,8 @@ namespace Chamber {
 #define HGA_BYTES_PER_LINE (HGA_WIDTH / HGA_PIXELS_PER_BYTE)
 #define HGA_CALCXY_RAW(x, y) ( ((y) % 4) * HGA_NEXT_LINES_OFS + ((y) / 4) * HGA_BYTES_PER_LINE + (x) / HGA_PIXELS_PER_BYTE )
 #define HGA_CENTERED_BASE_OFS HGA_CALCXY_RAW(-76, 8)
+
+
 #ifdef __386__
 #define HGA_SCREENBUFFER ((byte*)(HGA_BASE_SEG * 16))
 #define HGA_BACKBUFFER ((byte*)(HGA_PAGE2_SEG * 16))
@@ -60,6 +64,11 @@ namespace Chamber {
 #define CGA_BYTES_PER_LINE (CGA_WIDTH / CGA_PIXELS_PER_BYTE)
 
 extern byte CGA_SCREENBUFFER[0xB800];
+// nasir
+extern byte HGA_SCREENBUFFER[0xB000];
+#define HGA_CALCXY(x, y) (((y) % 4) * HGA_NEXT_LINES_OFS + ((y) / 4) * HGA_BYTES_PER_LINE + (x) / HGA_PIXELS_PER_BYTE)
+// nasir
+
 
 #define CGA_FONT_HEIGHT 6
 
@@ -92,6 +101,11 @@ void cga_BackBufferToRealFull(void);
 void cga_RealBufferToBackFull(void);
 void cga_SwapRealBackBuffer(void);
 
+// Nasir code starts
+   void hga_ColorSelect(byte csel);
+   void hga_BackBufferToRealFull(void);
+// Nasir code ends
+
 void cga_SwapScreenRect(byte *pixels, uint16 w, uint16 h, byte *screen, uint16 ofs);
 
 uint16 CalcXY(uint16 x, uint16 y);
@@ -106,6 +120,8 @@ void cga_CopyScreenBlock(byte *source, uint16 w, uint16 h, byte *target, uint16 
 
 byte *cga_BackupImage(byte *source, uint16 ofs, uint16 w, uint16 h, byte *buffer);
 byte *cga_BackupImageReal(uint16 ofs, uint16 w, uint16 h);
+
+
 
 void cga_RestoreImage(byte *buffer, byte *target);
 void cga_RefreshImageData(byte *buffer);

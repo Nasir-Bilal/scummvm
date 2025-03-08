@@ -36,6 +36,7 @@
 namespace Chamber {
 
 ChamberEngine *g_vm;
+byte HGA_SCREENBUFFER[0xB000]; // Declaration
 
 ChamberEngine::ChamberEngine(OSystem *syst, const ADGameDescription *desc)
 	: Engine(syst) {
@@ -52,7 +53,7 @@ ChamberEngine::ChamberEngine(OSystem *syst, const ADGameDescription *desc)
 	_prioritycommand_1 = false;
 	_prioritycommand_2 = false;
 	_pxiData = NULL;
-	_videoMode = Common::kRenderCGA;
+	_videoMode = Common::kRenderHercG;
 	_screenH = _screenW = _screenBits = _screenBPL = _screenPPB = 0;
 	_line_offset = _line_offset2 = _fontHeight = _fontWidth = 0;
 

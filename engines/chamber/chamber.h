@@ -95,7 +95,7 @@ private:
 void init(void);
 
 extern ChamberEngine *g_vm;
-
+extern byte HGA_SCREENBUFFER[0xB000]; // Declaration
 } // End of namespace Chamber
 
 #endif

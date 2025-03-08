@@ -27,6 +27,7 @@
 #include "chamber/input.h"
 #include "chamber/resdata.h"
 #include "chamber/cga.h"
+#include <string.h>
 
 #include "common/debug.h"
 
@@ -63,6 +64,7 @@ uint16 HGA_CalcXY(uint16 x, uint16 y) {
 }
 
 extern byte backbuffer[0xB800]; ///< CGA: 0x4000, HGS: 0xB800
+extern byte hga_backbuffer[0xB000]; ///< CGA: 0x4000, HGS: 0xB800
 byte CGA_SCREENBUFFER[0xB800];
 byte scrbuffer[720*348];		///< Screen buffer for blitting, it is intentionally left larger instead of dynamic memory allocation
 
@@ -101,12 +103,41 @@ byte cga_pixel_flip[256] = {
 	63, 127, 191, 255
 };
 
+
+
+
+
 static const uint8 PALETTE_CGA[4 * 3] = {
 	0x00, 0x00, 0x00, // black
 	0x55, 0xff, 0xff, // cyan
 	0xff, 0x55, 0xff, // magenta
 	0xff, 0xff, 0xff
 };
+
+//Nasir code start
+static const uint8 PALETTE_HGA[4 * 3] = {
+	0x00, 0x00, 0x00, // black
+	0xFF, 0xFF, 0xFF, // white
+	0xFF, 0xFF, 0xFF, // white
+	0xFF, 0xFF, 0xFF  // white
+};
+
+void hga_ColorSelect(byte csel) {
+	const byte *pal;
+
+	pal = PALETTE_HGA;
+
+	g_system->getPaletteManager()->setPalette(pal, 0, 4);
+	g_system->setCursorPalette(pal, 0, 4);
+}
+
+void hga_BackBufferToRealFull(void) {
+	//cga_BackBufferToRealFull();
+	memmove(HGA_SCREENBUFFER, hga_backbuffer, sizeof(hga_backbuffer)); // error here  ( remove this comment )
+	//memcpy was causing and error 
+	cga_blitToScreen(0, 0, g_vm->_screenW, g_vm->_screenH); // < cga_blitToScreen is takling both cga and hga
+}
+// Nasir code ends
 
 static const uint8 PALETTE_CGA2[4 * 3] = {
 	0x00, 0x00, 0x00, // black
@@ -144,6 +175,9 @@ void cga_ColorSelect(byte csel) {
 	g_system->getPaletteManager()->setPalette(pal, 0, 4);
 	g_system->setCursorPalette(pal, 0, 4);
 }
+  
+
+
 
 void cga_blitToScreen(int16 dx, int16 dy, int16 w, int16 h) {
 	dx = dy = 0;

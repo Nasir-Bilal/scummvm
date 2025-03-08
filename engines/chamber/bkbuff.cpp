@@ -23,8 +23,11 @@
 
 namespace Chamber {
 
-
 byte backbuffer[0xB800]; ///< CGA: 0x4000, HGS: 0xB800
+
+//nasir starts
+byte hga_backbuffer[0xB000]; ///< Corrected size for HGA
+//nasir ends
 
 } // End of namespace Chamber
 

@@ -68,6 +68,8 @@ int16 loadSplash(const char *filename) {
 	return 1;
 }
 
+
+
 uint16 benchmarkCpu(void) {
 	byte t;
 	uint16 cycles = 0;
@@ -257,8 +259,14 @@ Common::Error ChamberEngine::init() {
 		cga_BackBufferToRealFull();
 	} else if (_videoMode == Common::RenderMode::kRenderHercG) {
 		/* Select intense cyan-mageta palette */
-		cga_ColorSelect(0x30);
-		cga_BackBufferToRealFull();
+
+		/* changed into black and while pallette by Nasir*/
+		// Nasir code start
+		//0x30 needs to be deleted i think
+		hga_ColorSelect(0x30);
+
+		hga_BackBufferToRealFull();
+		// Nasir code ends
 	}
 
 	/* Wait for a keypress */
