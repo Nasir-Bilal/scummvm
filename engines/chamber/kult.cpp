@@ -232,7 +232,11 @@ Common::Error ChamberEngine::init() {
 
 	IFGM_Init();
 
+	 if (_videoMode == Common::RenderMode::kRenderCGA) {
 	switchToGraphicsMode();
+	} else if (_videoMode == Common::RenderMode::kRenderHercG) {
+		 switchToGraphicsMode_HGA();
+	}
 
 	/* Install timer callback */
 	initTimer();
@@ -247,7 +251,7 @@ Common::Error ChamberEngine::init() {
 		}
 	} else {
 		/* Load title screen */
-		if (!loadSplash("PRES.BIN"))
+		if (!loadSplash("PERS1.BIN"))
 			exitGame();
 	}
 
@@ -256,8 +260,8 @@ Common::Error ChamberEngine::init() {
 		cga_ColorSelect(0x30);
 		cga_BackBufferToRealFull();
 	} else if (_videoMode == Common::RenderMode::kRenderHercG) {
-		/* Select intense cyan-mageta palette */
-		cga_ColorSelect(0x30);
+		/* Select intense BLACK AND WHITE */
+		hga_ColorSelect(0x10);
 		cga_BackBufferToRealFull();
 	}
 

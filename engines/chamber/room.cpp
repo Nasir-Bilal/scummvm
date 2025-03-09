@@ -38,7 +38,7 @@
 
 namespace Chamber {
 
-byte scratch_mem1[8010];
+byte scratch_mem1[32000]; //8010
 byte *scratch_mem2 = scratch_mem1 + 1500;
 
 rect_t room_bounds_rect = {0, 0, 0, 0};

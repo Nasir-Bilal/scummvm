@@ -102,7 +102,7 @@ SCI0_CGADriver::SCI0_CGADriver(bool emulateCGAModeOnEGACard, bool rgbRendering) 
 	for (int i = 0; i < op1len - 7; ++i) {
 		uint32 cfg = READ_BE_UINT32(buf + i);
 		cmd = READ_BE_UINT32(buf + 4 + i);
-		if ((cmd >> 16) == 0xCD10 && (cfg & 0xff00ff) == 0xB80000) {
+		if ((cmd >> 16) == 0xCD10 && (cfg & 0xff00ff) ==  0xB8000) {
 			mode = (cfg >> 8) & 0xff;
 		} else if (cmd == 0xB40BCD10) {
 			if (cfg >> 8 == 0x00B701B3) {

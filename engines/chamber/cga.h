@@ -27,7 +27,7 @@ namespace Chamber {
 // HGA Constants
 #define HGA_WIDTH 720
 #define HGA_HEIGHT 348
-#define HGA_BASE_SEG 0xB000
+#define HGA_BASE_SEG 31320
 #define HGA_PAGE2_SEG 0xB800
 #define HGA_NEXT_LINES_OFS 0x2000
 #define HGA_BITS_PER_PIXEL 1
@@ -61,7 +61,7 @@ namespace Chamber {
 
 extern byte CGA_SCREENBUFFER[0xB800];
 
-#define CGA_FONT_HEIGHT 6
+#define CGA_FONT_HEIGHT 
 
 #define CGA_NEXT_LINE(offs) ((CGA_ODD_LINES_OFS ^ (offs)) + (((offs) & CGA_ODD_LINES_OFS) ? 0 : CGA_BYTES_PER_LINE))
 #define CGA_PREV_LINE(offs) ((CGA_ODD_LINES_OFS ^ (offs)) - (((offs) & CGA_ODD_LINES_OFS) ? CGA_BYTES_PER_LINE : 0))
@@ -81,6 +81,7 @@ extern byte char_draw_max_width;
 extern byte char_draw_max_height;
 
 void switchToGraphicsMode(void);
+void switchToGraphicsMode_HGA(void);
 void switchToTextMode(void);
 
 void waitVBlank(void);
@@ -88,6 +89,7 @@ void cga_blitToScreen(int16 dx, int16 dy, int16 w, int16 h);
 void cga_blitToScreen(int16 ofs, int16 w, int16 h);
 
 void cga_ColorSelect(byte csel);
+void hga_ColorSelect(byte intensity);
 void cga_BackBufferToRealFull(void);
 void cga_RealBufferToBackFull(void);
 void cga_SwapRealBackBuffer(void);

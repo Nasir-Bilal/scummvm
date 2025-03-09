@@ -108,6 +108,11 @@ static const uint8 PALETTE_CGA[4 * 3] = {
 	0xff, 0xff, 0xff
 };
 
+static const uint8 PALETTE_HGA[2 * 3] = {
+	0x00, 0x00, 0x00, // Black
+	0xFF, 0xFF, 0xFF  // White
+};
+
 static const uint8 PALETTE_CGA2[4 * 3] = {
 	0x00, 0x00, 0x00, // black
 	0x55, 0xff, 0x55, // green
@@ -120,6 +125,10 @@ static const uint8 PALETTE_CGA2[4 * 3] = {
 */
 void switchToGraphicsMode(void) {
 	g_system->getPaletteManager()->setPalette(PALETTE_CGA, 0, 4);
+}
+
+void switchToGraphicsMode_HGA(void) {
+	g_system->getPaletteManager()->setPalette(PALETTE_HGA, 0, 2);
 }
 
 /*
@@ -143,6 +152,30 @@ void cga_ColorSelect(byte csel) {
 
 	g_system->getPaletteManager()->setPalette(pal, 0, 4);
 	g_system->setCursorPalette(pal, 0, 4);
+}
+
+void hga_ColorSelect(byte intensity) {
+	// Define a monochrome palette with adjustable intensity for white
+	static uint8 PALETTE_HGA_INTENSE[2 * 3] = {
+		0x00, 0x00, 0x00, // Black
+		0xFF, 0xFF, 0xFF  // White (full intensity)
+	};
+
+	static uint8 PALETTE_HGA_DIM[2 * 3] = {
+		0x00, 0x00, 0x00, // Black
+		0x7F, 0x7F, 0x7F  // White (dim intensity)
+	};
+
+	const byte *pal;
+	if (intensity & 0x10) {
+		pal = PALETTE_HGA_INTENSE; // Use full intensity white
+	} else {
+		pal = PALETTE_HGA_DIM; // Use dim intensity white
+	}
+
+	// Set the palette
+	g_system->getPaletteManager()->setPalette(pal, 0, 2);
+	g_system->setCursorPalette(pal, 0, 2);
 }
 
 void cga_blitToScreen(int16 dx, int16 dy, int16 w, int16 h) {
@@ -184,6 +217,13 @@ void cga_blitToScreen(int16 dx, int16 dy, int16 w, int16 h) {
 		}
 	}
 
+
+	 const int bufferSize = 720*348; // Adjust the size as needed
+	
+	for (int i = 0; i < bufferSize; i++) {
+		scrbuffer[i] = (i % 2 == 0) ? 0xFF : 0x00;
+	}
+
 	g_system->copyRectToScreen(scrbuffer + dy * g_vm->_screenW + dx, g_vm->_screenW, dx, dy, w * (0x8 / g_vm->_screenBits), h);
 	g_system->updateScreen();
 }
@@ -197,8 +237,8 @@ void cga_blitToScreen(int16 ofs, int16 w, int16 h) {
 }
 
 void cga_BackBufferToRealFull(void) {
-	memcpy(CGA_SCREENBUFFER, backbuffer, sizeof(backbuffer));
 
+	memcpy(CGA_SCREENBUFFER, backbuffer, sizeof(backbuffer));
 	cga_blitToScreen(0, 0, g_vm->_screenW, g_vm->_screenH);
 }
 
