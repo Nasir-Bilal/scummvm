@@ -1,4 +1,4 @@
-/* ScummVM - Graphic Adventure Engine
+﻿/* ScummVM - Graphic Adventure Engine
  *
  * ScummVM is the legal property of its developers, whose names
  * are too numerous to list here. Please refer to the COPYRIGHT
@@ -197,8 +197,37 @@ void cga_blitToScreen(int16 ofs, int16 w, int16 h) {
 }
 
 void cga_BackBufferToRealFull(void) {
-	memcpy(CGA_SCREENBUFFER, backbuffer, sizeof(backbuffer));
+	if (g_vm->_videoMode == Common::RenderMode::kRenderCGA) {
+		memcpy(CGA_SCREENBUFFER, backbuffer, sizeof(backbuffer));
 
+	} else if (g_vm->_videoMode == Common::RenderMode::kRenderHercG) {
+		byte tempBackbuffer[0x4000];
+		byte *even = tempBackbuffer;
+		byte *odd  = tempBackbuffer + CGA_BYTES_PER_LINE;
+
+		byte *page0 = backbuffer;
+		byte *page1 = backbuffer + CGA_ODD_LINES_OFS;
+
+		for (int i = 0; i < CGA_HEIGHT / 2; i++) {
+			memcpy(odd, page1, CGA_BYTES_PER_LINE);
+			memcpy(even, page0, CGA_BYTES_PER_LINE);
+
+			page0 += CGA_BYTES_PER_LINE;
+			page1 += CGA_BYTES_PER_LINE;
+			even += 2 * CGA_BYTES_PER_LINE;
+			odd += 2 * CGA_BYTES_PER_LINE;
+		}
+		
+		const int16 START_X_PIXELS = (HGA_WIDTH - (2 * CGA_WIDTH)) / 4; 
+		const int16 START_Y       = (HGA_HEIGHT - CGA_HEIGHT) / 2;
+
+		byte *srcPtr = tempBackbuffer;
+		for (int16 row = 0; row < CGA_HEIGHT; row++) {
+			byte *destPtr = CGA_SCREENBUFFER + HGA_CalcXY(START_X_PIXELS, START_Y + row);
+			memmove(destPtr, srcPtr, CGA_BYTES_PER_LINE);
+			srcPtr += CGA_BYTES_PER_LINE;
+		}
+	}
 	cga_blitToScreen(0, 0, g_vm->_screenW, g_vm->_screenH);
 }
 
@@ -336,10 +365,10 @@ void cga_Blit(byte *pixels, uint16 pw, uint16 w, uint16 h, byte *screen, uint16 
 	byte *src = pixels;
 	uint16 oofs = ofs;
 	for (int16 y = 0; y < h; y++) {
-		memcpy(screen + ofs, src, w);
+			memcpy(screen + ofs, src, w);
 		src += pw;
 		ofs ^= g_vm->_line_offset;
-		if ((ofs & g_vm->_line_offset) == 0)
+		if ((ofs & g_vm->_line_offset) == 0) 
 			ofs += g_vm->_screenBPL;
 	}
 
@@ -452,41 +481,41 @@ void cga_DrawVLine(uint16 x, uint16 y, uint16 l, byte color, byte *target) {
 Draw a horizontal line with origin x:y and length l, using color
 NB! Line must not wrap around the edge
 */
-void cga_DrawHLine(uint16 x, uint16 y, uint16 l, byte color, byte *target) {
-	uint16 ofs;
-	uint16 mask = 0;
-	/*pixels are starting from top bits of byte*/
-	if (g_vm->_videoMode == Common::RenderMode::kRenderCGA){
-		mask = static_cast<uint16>((~(3 << ((g_vm->_screenPPB - 1) * g_vm->_screenPPB))) & 0xffff);
-	} else if (g_vm->_videoMode == Common::RenderMode::kRenderHercG) {
-		mask = static_cast<uint16>((~(1 << ((g_vm->_screenPPB - 1) * g_vm->_screenPPB))) & 0xffff);
-	}
-
-	byte pixel = color << ((g_vm->_screenPPB - 1) * g_vm->_screenPPB);
-
-	mask >>= (x % g_vm->_screenPPB) * g_vm->_screenPPB;
-	pixel >>= (x % g_vm->_screenPPB) * g_vm->_screenPPB;
-
-	ofs = CalcXY_p(x / g_vm->_screenPPB, y);
-
-	uint16 ol = l;
-	while (l--) {
-		target[ofs] = (target[ofs] & mask) | pixel;
-		mask >>= g_vm->_screenPPB;
-		pixel >>= g_vm->_screenPPB;
-		if (mask == 0xFF) {
-			ofs++;
-			if (g_vm->_videoMode == Common::RenderMode::kRenderCGA){
-				mask = static_cast<uint16>((~(3 << ((g_vm->_screenPPB - 1) * g_vm->_screenPPB))) & 0xffff);
-			} else if (g_vm->_videoMode == Common::RenderMode::kRenderHercG) {
-				mask = static_cast<uint16>((~(1 << ((g_vm->_screenPPB - 1) * g_vm->_screenPPB))) & 0xffff);
-			}
-			pixel = color << ((g_vm->_screenPPB - 1) * g_vm->_screenPPB);
+	void cga_DrawHLine(uint16 x, uint16 y, uint16 l, byte color, byte *target) {
+		uint16 ofs;
+		uint16 mask = 0;
+		/*pixels are starting from top bits of byte*/
+		if (g_vm->_videoMode == Common::RenderMode::kRenderCGA){
+			mask = static_cast<uint16>((~(3 << ((g_vm->_screenPPB - 1) * g_vm->_screenPPB))) & 0xffff);
+		} else if (g_vm->_videoMode == Common::RenderMode::kRenderHercG) {
+			mask = static_cast<uint16>((~(1 << ((g_vm->_screenPPB - 1) * g_vm->_screenPPB))) & 0xffff);
 		}
+
+		byte pixel = color << ((g_vm->_screenPPB - 1) * g_vm->_screenPPB);
+
+		mask >>= (x % g_vm->_screenPPB) * g_vm->_screenPPB;
+		pixel >>= (x % g_vm->_screenPPB) * g_vm->_screenPPB;
+
+	    ofs = CalcXY_p(x / g_vm->_screenPPB, y);
+
+		uint16 ol = l;
+		while (l--) {
+			target[ofs] = (target[ofs] & mask) | pixel;
+			mask >>= g_vm->_screenPPB;
+			pixel >>= g_vm->_screenPPB;
+			if (mask == 0xFF) {
+				ofs++;
+				if (g_vm->_videoMode == Common::RenderMode::kRenderCGA){
+					mask = static_cast<uint16>((~(3 << ((g_vm->_screenPPB - 1) * g_vm->_screenPPB))) & 0xffff);
+				} else if (g_vm->_videoMode == Common::RenderMode::kRenderHercG) {
+					mask = static_cast<uint16>((~(1 << ((g_vm->_screenPPB - 1) * g_vm->_screenPPB))) & 0xffff);
+				}
+				pixel = color << ((g_vm->_screenPPB - 1) * g_vm->_screenPPB);
+			}
+		}
+		if (target == CGA_SCREENBUFFER)
+			cga_blitToScreen(x, y, ol, 1);	
 	}
-	if (target == CGA_SCREENBUFFER)
-		cga_blitToScreen(x, y, ol, 1);
-}
 
 /*
 Draw horizontal line of length l with color, add surrounding pixels (bmask, bpix, left in high byte, right in low)
