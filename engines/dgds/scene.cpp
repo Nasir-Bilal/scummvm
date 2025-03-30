@@ -26,14 +26,11 @@
 #include "common/system.h"
 #include "common/util.h"
 
-#include "graphics/surface.h"
-
 #include "dgds/dgds.h"
 #include "dgds/includes.h"
 #include "dgds/resource.h"
 #include "dgds/scene.h"
 #include "dgds/ads.h"
-#include "dgds/menu.h"
 #include "dgds/globals.h"
 #include "dgds/inventory.h"
 #include "dgds/debug_util.h"
@@ -42,13 +39,21 @@
 namespace Dgds {
 
 
+//
+// The number of frames between mouse down and the action changing:
+//           short     long
+// L button: use   ->  pick up
+// R button: look  ->  target
+//
+static const int MOUSE_DOWN_TIMEOUT = 3;
+
 Common::String HotArea::dump(const Common::String &indent) const {
 	Common::String str = Common::String::format("%sHotArea<%s num %d cursor %d cursor2 %d interactionRectNum %d",
 			indent.c_str(), _rect.dump("").c_str(), _num, _cursorNum, _cursorNum2, _objInteractionRectNum);
 	str += DebugUtil::dumpStructList(indent, "enableConditions", enableConditions);
-	str += DebugUtil::dumpStructList(indent, "onRClickOps", onRClickOps);
-	str += DebugUtil::dumpStructList(indent, "onLDownOps", onLDownOps);
-	str += DebugUtil::dumpStructList(indent, "onLClickOps", onLClickOps);
+	str += DebugUtil::dumpStructList(indent, "onLookOps", onLookOps);
+	str += DebugUtil::dumpStructList(indent, "onPickUpOps", onPickUpOps);
+	str += DebugUtil::dumpStructList(indent, "onUseOps", onUseOps);
 	str += "\n";
 	str += indent + ">";
 	return str;
@@ -159,9 +164,9 @@ bool Scene::readHotArea(Common::SeekableReadStream *s, HotArea &dst) const {
 		dst._objInteractionRectNum = 0;
 	}
 	readConditionList(s, dst.enableConditions);
-	readOpList(s, dst.onRClickOps);
-	readOpList(s, dst.onLDownOps);
-	readOpList(s, dst.onLClickOps);
+	readOpList(s, dst.onLookOps);
+	readOpList(s, dst.onPickUpOps);
+	readOpList(s, dst.onUseOps);
 	return !s->err();
 }
 
@@ -257,16 +262,14 @@ bool Scene::readOpList(Common::SeekableReadStream *s, Common::Array<SceneOp> &li
 }
 
 
-bool Scene::readDialogList(Common::SeekableReadStream *s, Common::Array<Dialog> &list, int16 filenum /* = 0 */) const {
+bool Scene::readDialogList(Common::SeekableReadStream *s, Common::List<Dialog> &list, int16 filenum /* = 0 */) const {
 	// Some data on this format here https://www.oldgamesitalia.net/forum/index.php?showtopic=24055&st=25&p=359214&#entry359214
 
 	uint16 nitems = s->readUint16LE();
 	_checkListNotTooLong(nitems, "dialogs");
-	uint startsize = list.size();
-	list.resize(startsize + nitems);
 
-	for (uint i = startsize; i < list.size(); i++) {
-		Dialog &dst = list[i];
+	for (uint i = 0; i < nitems; i++) {
+		Dialog dst;
 		dst._num = s->readUint16LE();
 		dst._fileNum = filenum;
 		dst._rect.x = s->readUint16LE();
@@ -324,6 +327,7 @@ bool Scene::readDialogList(Common::SeekableReadStream *s, Common::Array<Dialog> 
 			else
 				dst._fontColor = dst._fontColor ^ 8;
 		}
+		list.push_back(dst);
 	}
 
 	return !s->err();
@@ -512,7 +516,8 @@ bool SDSScene::_dlgWithFlagLo8IsClosing = false;
 DialogFlags SDSScene::_sceneDialogFlags = kDlgFlagNone;
 
 SDSScene::SDSScene() : _num(-1), _dragItem(nullptr), _shouldClearDlg(false), _ignoreMouseUp(false),
-_field6_0x14(0), _rbuttonDown(false), _lbuttonDown(false), _lookMode(0), _lbuttonDownWithDrag(false) {
+_field6_0x14(0), _rbuttonDown(false), _lbuttonDown(false), _lookMode(0), _lbuttonDownWithDrag(false),
+_mouseDownArea(nullptr), _mouseDownCounter(0) {
 }
 
 bool SDSScene::load(const Common::String &filename, ResourceManager *resourceManager, Decompressor *decompressor) {
@@ -597,6 +602,10 @@ void SDSScene::unload() {
 	_conversation.unloadData();
 	_conditionalOps.clear();
 	_sceneDialogFlags = kDlgFlagNone;
+	_mouseDownArea = nullptr;
+	_mouseDownCounter = 0;
+	_rbuttonDown = false;
+	_lbuttonDown = false;
 }
 
 
@@ -728,8 +737,9 @@ void SDSScene::loadDialogData(uint16 fileNum) {
 	if (_dialogs.size() != prevSize) {
 		debug(10, "Read %d dialogs from DDS %s (ver %s id '%s'):", _dialogs.size() - prevSize,
 			filename.c_str(), fileVersion.c_str(), fileId.c_str());
-		for (uint i = prevSize; i < _dialogs.size(); i++)
-			debug(10, "%s", _dialogs[i].dump("").c_str());
+		for (const auto &dlg: _dialogs)
+			if (dlg._fileNum == fileNum)
+				debug(10, "%s", dlg.dump("").c_str());
 	}
 
 	if (!result)
@@ -746,11 +756,9 @@ void SDSScene::freeDialogData(uint16 fileNum) {
 	if (!fileNum)
 		return;
 
-	for (int i = 0; i < (int)_dialogs.size(); i++) {
-		if (_dialogs[i]._fileNum == fileNum) {
-			_dialogs.remove_at(i);
-			i--;
-		}
+	for (Common::List<Dialog>::iterator iter = _dialogs.begin(); iter != _dialogs.end(); iter++) {
+		if (iter->_fileNum == fileNum)
+			iter = _dialogs.erase(iter);
 	}
 }
 
@@ -1195,7 +1203,7 @@ bool SDSScene::drawAndUpdateDialogs(Graphics::ManagedSurface *dst) {
 	return retval;
 }
 
-void SDSScene::mouseMoved(const Common::Point &pt) {
+void SDSScene::mouseUpdate(const Common::Point &pt) {
 	Dialog *dlg = getVisibleDialog();
 	const HotArea *area = findAreaUnderMouse(pt);
 	DgdsEngine *engine = DgdsEngine::getInstance();
@@ -1212,6 +1220,21 @@ void SDSScene::mouseMoved(const Common::Point &pt) {
 
 	GameItem *activeItem = engine->getGDSScene()->getActiveItem();
 
+	if (_lbuttonDown || _rbuttonDown) {
+		_mouseDownCounter++;
+		if (_mouseDownCounter > MOUSE_DOWN_TIMEOUT) {
+			if (_lbuttonDown && !_rbuttonDown)
+				doPickUp(_mouseDownArea);
+			if (activeItem && _rbuttonDown) {
+				// Start target mode
+				cursorNum = activeItem->_altCursor;
+			}
+		}
+	} else {
+		_mouseDownArea = nullptr;
+		_mouseDownCounter = 0;
+	}
+
 	if (_dragItem) {
 		if (area && area->_objInteractionRectNum == 1 && !(_dragItem->_flags & kItemStateWasInInv)) {
 			// drag over Willy Beamish
@@ -1220,11 +1243,10 @@ void SDSScene::mouseMoved(const Common::Point &pt) {
 		}
 
 		cursorNum = _dragItem->_iconNum;
-	} else if (activeItem) {
-		// In HOC or Dragon you need to hold down right button to get the
-		// target cursor.  In Willy Beamish it is look mode 2 (target)
-		if (_rbuttonDown || _lookMode == 2)
-			cursorNum = activeItem->_altCursor;
+	} else if (activeItem && _lookMode == 2) {
+		// For Willy Beamish, target mode is sticky (look mode 2), in
+		// other games it's only while mouse is down
+		cursorNum = activeItem->_altCursor;
 	}
 
 	engine->setMouseCursor(cursorNum);
@@ -1250,17 +1272,19 @@ void SDSScene::mouseLDown(const Common::Point &pt) {
 	if (_lookMode)
 		return;
 
-	HotArea *area = findAreaUnderMouse(pt);
+	_mouseDownArea = findAreaUnderMouse(pt);
+}
+
+void SDSScene::doPickUp(HotArea *area) {
 	if (!area)
 		return;
-
-	debug(9, "Mouse LDown on area %d (%d,%d,%d,%d) cursor %d cursor2 %d. Run %d ops", area->_num,
+	debug(9, "doPickUp on area %d (%d,%d,%d,%d) cursor %d cursor2 %d. Run %d ops", area->_num,
 			area->_rect.x, area->_rect.y, area->_rect.width, area->_rect.height,
-			area->_cursorNum, area->_cursorNum2, area->onLDownOps.size());
+			area->_cursorNum, area->_cursorNum2, area->onPickUpOps.size());
 
 	DgdsEngine *engine = DgdsEngine::getInstance();
-	int16 addmins = engine->getGameGlobals()->getGameMinsToAddOnStartDrag();
-	runOps(area->onLDownOps, addmins);
+	int16 addmins = engine->getGameGlobals()->getGameMinsToAddOnPickUp();
+	runOps(area->onPickUpOps, addmins);
 	GameItem *item = dynamic_cast<GameItem *>(area);
 	if (item) {
 		_dragItem = item;
@@ -1269,6 +1293,9 @@ void SDSScene::mouseLDown(const Common::Point &pt) {
 		if (item->_iconNum)
 			engine->setMouseCursor(item->_iconNum);
 	}
+
+	_mouseDownArea = nullptr;
+	_mouseDownCounter = 0;
 }
 
 static bool _isInRect(const Common::Point &pt, const DgdsRect rect) {
@@ -1309,27 +1336,84 @@ void SDSScene::mouseLUp(const Common::Point &pt) {
 	}
 
 	if (_lookMode == 1) {
+		// Sticky look mode is on
 		rightButtonAction(pt);
 		return;
 	}
 
-	const HotArea *area = findAreaUnderMouse(pt);
+	const HotArea *area = _mouseDownArea;
+	_mouseDownArea = nullptr;
+	_mouseDownCounter = 0;
+
+	if (area) {
+		debug(9, "Mouse LUp on area %d (%d,%d,%d,%d) cursor %d cursor2 %d", area->_num, area->_rect.x, area->_rect.y,
+			  area->_rect.width, area->_rect.height, area->_cursorNum, area->_cursorNum2);
+	} else {
+		debug(9, "Mouse LUp at %d,%d with no active area", pt.x, pt.y);
+	}
+
+	const GameItem *activeItem = engine->getGDSScene()->getActiveItem();
+
+	if (activeItem && (_rbuttonDown || _lookMode == 2)) {
+		bothButtonAction(pt);
+	} else {
+		leftButtonAction(area);
+	}
+}
+
+void SDSScene::bothButtonAction(const Common::Point &pt) {
+	DgdsEngine *engine = DgdsEngine::getInstance();
+	GDSScene *gds = engine->getGDSScene();
+	const GameItem *activeItem = gds->getActiveItem();
+
+	debug(1, " --> exec both-button click ops with active item %d", activeItem->_num);
+	if (!runOps(activeItem->onBothButtonsOps))
+		return;
+
+	//
+	// Both-button click interactions are run on *all* things the mouse
+	// ignoring their "active" status.
+	//
+
+	for (const auto &hotArea : _hotAreaList) {
+		if (!hotArea._rect.contains(pt))
+			continue;
+
+		const ObjectInteraction *i = _findInteraction(_objInteractions2, activeItem->_num, hotArea._num);
+		if (!i)
+			continue;
+
+		debug(1, " --> exec %d both-click ops for item-area combo %d", i->opList.size(), activeItem->_num);
+		if (!runOps(i->opList, engine->getGameGlobals()->getGameMinsToAddOnObjInteraction()))
+			return;
+	}
+
+	for (const auto &item : gds->getGameItems()) {
+		if (item._inSceneNum != _num || !item._rect.contains(pt))
+			continue;
+
+		const ObjectInteraction *i = _findInteraction(gds->getObjInteractions2(), activeItem->_num, item._num);
+		if (!i)
+			continue;
+
+		debug(1, " --> exec %d both-click ops for item-item combo %d", i->opList.size(), activeItem->_num);
+		if (!runOps(i->opList, engine->getGameGlobals()->getGameMinsToAddOnObjInteraction()))
+			return;
+	}
+}
+
+void SDSScene::leftButtonAction(const HotArea *area) {
 	if (!area)
 		return;
 
-	debug(9, "Mouse LUp on area %d (%d,%d,%d,%d) cursor %d cursor2 %d", area->_num, area->_rect.x, area->_rect.y,
-		  area->_rect.width, area->_rect.height, area->_cursorNum, area->_cursorNum2);
-
-	if (!_rbuttonDown)
-		engine->setMouseCursor(area->_cursorNum);
-
+	DgdsEngine *engine = DgdsEngine::getInstance();
 	GDSScene *gds = engine->getGDSScene();
 
 	if (area->_num == 0 || area->_objInteractionRectNum == 1) {
-		debug(1, "Mouseup on inventory.");
+		debug(1, "Mouse LUp on inventory.");
 		engine->getInventory()->open();
-	} else if (area->_num == 0xffff) {
-		debug(1, "Mouseup on swap characters.");
+	} else if (area && area->_num == 0xffff) {
+		debug(1, "Mouse LUp on swap characters.");
 		bool haveInvBtn = _hotAreaList.size() && _hotAreaList.front()._num == 0;
 		if (haveInvBtn)
 			removeInvButtonFromHotAreaList();
@@ -1339,30 +1423,9 @@ void SDSScene::mouseLUp(const Common::Point &pt) {
 		if (haveInvBtn)
 			addInvButtonToHotAreaList();
 	} else {
-		const GameItem *activeItem = engine->getGDSScene()->getActiveItem();
-		if (activeItem && (_rbuttonDown || _lookMode == 2)) {
-			debug(1, " --> exec both-button click ops for area %d", area->_num);
-			// A both-button-click event, find the interaction list.
-			if (!runOps(activeItem->onBothButtonsOps))
-				return;
-
-			const GameItem *destItem = dynamic_cast<const GameItem *>(area);
-			const ObjectInteraction *i;
-			if (destItem) {
-				i =_findInteraction(gds->getObjInteractions2(), activeItem->_num, area->_num);
-			} else {
-				i = _findInteraction(_objInteractions2, activeItem->_num, area->_num);
-			}
-			if (i) {
-				debug(1, " --> exec %d both-click ops for item combo %d", i->opList.size(), activeItem->_num);
-				if (!runOps(i->opList, engine->getGameGlobals()->getGameMinsToAddOnObjInteraction()))
-					return;
-			}
-		} else {
-			debug(1, " --> exec %d L click ops for area %d", area->onLClickOps.size(), area->_num);
-			int16 addmins = engine->getGameGlobals()->getGameMinsToAddOnLClick();
-			runOps(area->onLClickOps, addmins);
-		}
+		debug(1, " --> exec %d use ops for area %d", area->onUseOps.size(), area->_num);
+		int16 addmins = engine->getGameGlobals()->getGameMinsToAddOnUse();
+		runOps(area->onUseOps, addmins);
 	}
 }
 
@@ -1386,7 +1449,7 @@ void SDSScene::onDragFinish(const Common::Point &pt) {
 			dropSceneNum = 2;
 	}
 
-	runOps(dragItem->onDragFinishedOps, globals->getGameMinsToAddOnDragFinished());
+	runOps(dragItem->onDragFinishedOps, globals->getGameMinsToAddOnDrop());
 
 	// Check for dropping on an object
 	for (const auto &item : gdsScene->getGameItems()) {
@@ -1454,8 +1517,8 @@ void SDSScene::mouseRDown(const Common::Point &pt) {
 		return;
 	}
 	_rbuttonDown = true;
-	// Ensure mouse cursor is updated
-	mouseMoved(pt);
+	_mouseDownArea = findAreaUnderMouse(pt);
+	mouseUpdate(pt);
 }
 
 void SDSScene::mouseRUp(const Common::Point &pt) {
@@ -1474,11 +1537,13 @@ void SDSScene::mouseRUp(const Common::Point &pt) {
 		} else {
 			_lookMode = !_lookMode;
 		}
-		mouseMoved(pt);
+		mouseUpdate(pt);
 	} else {
 		// Other games do right-button action straight away.
-		mouseMoved(pt);
-		rightButtonAction(pt);
+		bool doAction = _mouseDownCounter <= MOUSE_DOWN_TIMEOUT;
+		mouseUpdate(pt);
+		if (doAction)
+			rightButtonAction(pt);
 	}
 }
 
@@ -1500,10 +1565,17 @@ void SDSScene::rightButtonAction(const Common::Point &pt) {
 		if (swapDlgFile && swapDlgNum)
 			showDialog(swapDlgFile, swapDlgNum);
 	} else {
-		int16 addmins = engine->getGameGlobals()->getGameMinsToAddOnLClick();
-		debug(1, "Mouse RUp on area %d, run %d ops (+%d mins)", area->_num, area->onRClickOps.size(), addmins);
-		runOps(area->onRClickOps, addmins);
+		doLook(area);
 	}
+}
+
+void SDSScene::doLook(const HotArea *area) {
+	if (!area)
+		return;
+	DgdsEngine *engine = DgdsEngine::getInstance();
+	int16 addmins = engine->getGameGlobals()->getGameMinsToAddOnUse();
+	debug(1, "doLook on area %d, run %d ops (+%d mins)", area->_num, area->onLookOps.size(), addmins);
+	runOps(area->onLookOps, addmins);
 }
 
 Dialog *SDSScene::getVisibleDialog() {
